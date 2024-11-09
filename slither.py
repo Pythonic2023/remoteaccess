@@ -1,7 +1,6 @@
 """
 Remote access tool, slither
-This tools behaviour is made to call out to a pre-specified host and port if the controller (you)
-are not connected yet and provide shell access once connected.
+Controller and server to execute remote commands
 """
 
 import argparse
